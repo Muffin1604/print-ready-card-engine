@@ -121,10 +121,10 @@ _LAYOUT_DESIGNS: dict[str, dict[str, Any]] = {
         "YEAR": (441, 2016, 760, 2036),
         "ID": (800, 1966, 1055, 1994),
         "CARDNUM": (800, 1992, 1055, 2028),
-        "SKILLS_RIGHT": 1402,
-        "SKILLS_TOP": 382,
-        "SKILLS_GAP": 10,
-        "SKILLS_HEIGHT": 58,
+        # Bottom diagonal chrome (between VOTES / party circle). Boxes sized so both
+        # badges share height; SKILLS2 extends to the right diagonal (~before PARTY).
+        "SKILLS1": (372, 1745, 710, 1810),
+        "SKILLS2": (780, 1745, 1115, 1810),
         "fonts": {
             "NAME": 10, "COST": 24, "VC": 24, "SUBTYPE": 8.5,
             "EFFECT": 7, "POWER_COST": 7, "PARTY_TYPE": 8, "PARTYABB": 5.76,
@@ -392,19 +392,26 @@ def trim_skill_badge(badge: Image.Image) -> Image.Image:
 
 
 def paste_skills(card_img: Image.Image, skills: list[str], layout: dict[str, Any]) -> None:
+    """Place SKILLS1 / SKILLS2 badge images into their layout boxes (contain + center)."""
     if not skills:
         return
-    x_right, y = layout["SKILLS_RIGHT"], layout["SKILLS_TOP"]
-    target_h, gap = layout["SKILLS_HEIGHT"], layout["SKILLS_GAP"]
-    for skill in skills:
+    slots = [layout[k] for k in ("SKILLS1", "SKILLS2") if k in layout]
+    if not slots:
+        return
+    for skill, box in zip(skills, slots):
         path = ICONS / f"{skill}.png"
         if not path.exists():
             continue
         badge = trim_skill_badge(Image.open(path))
-        nw = max(1, int(badge.width * (target_h / badge.height)))
-        badge = badge.resize((nw, target_h), Image.Resampling.LANCZOS)
-        card_img.alpha_composite(badge, (x_right - nw, y))
-        y += target_h + gap
+        left, top, right, bottom = box
+        tw, th = max(1, right - left), max(1, bottom - top)
+        scale = min(tw / badge.width, th / badge.height)
+        nw = max(1, int(round(badge.width * scale)))
+        nh = max(1, int(round(badge.height * scale)))
+        badge = badge.resize((nw, nh), Image.Resampling.LANCZOS)
+        x = left + (tw - nw) // 2
+        y = top + (th - nh) // 2
+        card_img.alpha_composite(badge, (x, y))
 
 
 def draw_text(
@@ -715,15 +722,6 @@ def draw_layout_debug(img: Image.Image, layout: dict[str, Any]) -> Image.Image:
             label = f"{key}  ({left},{top})-({right},{bottom})"
             draw.rectangle((left, max(0, top - sx(34)), left + sx(8) * len(label), top), fill=(*color[:3], 180))
             draw.text((left + sx(4), max(0, top - sx(32))), label, font=font, fill=(0, 0, 0, 255))
-        elif key == "SKILLS_RIGHT":
-            x = int(value)
-            draw.line((x, 0, x, CARD_H), fill=color, width=max(1, sx(3)))
-            draw.text((x - sx(220), sx(20)), f"SKILLS_RIGHT={x}", font=font, fill=color)
-        elif key == "SKILLS_TOP":
-            y = int(value)
-            draw.line((0, y, CARD_W, y), fill=color, width=max(1, sx(3)))
-            draw.text((sx(20), y + sx(6)), f"SKILLS_TOP={y}", font=font, fill=color)
-
     ruler = load_font(sx(22), bold=False)
     step = sx(100)
     for x in range(0, CARD_W + 1, step):
