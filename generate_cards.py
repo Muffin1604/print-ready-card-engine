@@ -140,6 +140,10 @@ _LAYOUT_DESIGNS: dict[str, dict[str, Any]] = {
         "REGEN": (1160, 120, 1450, 320),
         "EFFECT": (140, 1390, 1360, 1760),
         **_FOOTER,
+        # Bottom chrome between left person circle / right party circle (below EFFECT).
+        # Nudge like ally: change BOTH edges on an axis so box size stays the same.
+        "SKILLS1": (395, 1735, 735, 1800),
+        "SKILLS2": (765, 1735, 1105, 1800),
         "fonts": {
             "NAME": 9, "PARTY_TYPE": 6, "MP": 24, "REGEN": 24,
             "EFFECT": 8, "PARTYABB": 6.86, **_FOOTER_FONTS,
@@ -153,6 +157,9 @@ _LAYOUT_DESIGNS: dict[str, dict[str, Any]] = {
         "EFFECT": (140, 1380, 1360, 1710),
         "PARTY_TYPE": (320, 1848, 1140, 1916),
         **_FOOTER,
+        # Between EFFECT bottom and PARTY_TYPE (above lightning / party row).
+        "SKILLS1": (400, 1730, 740, 1795),
+        "SKILLS2": (755, 1730, 1095, 1795),
         "fonts": {
             "NAME": 10, "COST": 30, "SUBTYPE": 6, "EFFECT": 8,
             "PARTY_TYPE": 8, "PARTYABB": 6.86, **_FOOTER_FONTS,
@@ -686,6 +693,7 @@ def render_card(card: CardData, avatar_path: Path) -> Image.Image:
         draw_text(draw, alliance, layout["PARTY_TYPE"], layout_font(layout, "PARTY_TYPE", bold=True))
         draw_effect_text(draw, card, layout)
         place_party_emblem(canvas, draw, card, layout)
+        paste_skills(canvas, card.skills, layout)
     else:  # EFFECT
         name, name_box = card.name.upper(), layout["NAME"]
         name_font = fit_font_to_width(name, name_box[2] - name_box[0], layout["fonts"]["NAME"], bold=True)
@@ -696,6 +704,7 @@ def render_card(card: CardData, avatar_path: Path) -> Image.Image:
         draw_subtype_pill(draw, card.subtype, layout)
         draw_text(draw, alliance, layout["PARTY_TYPE"], layout_font(layout, "PARTY_TYPE", bold=True))
         place_party_emblem(canvas, draw, card, layout)
+        paste_skills(canvas, card.skills, layout)
         draw_effect_text(draw, card, layout)
 
     draw_footer(canvas, draw, card, layout)
