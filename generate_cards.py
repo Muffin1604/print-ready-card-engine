@@ -659,7 +659,8 @@ def render_card(card: CardData, avatar_path: Path) -> Image.Image:
     if template.size != (CARD_W, CARD_H):
         template = template.resize((CARD_W, CARD_H), Image.Resampling.LANCZOS)
 
-    canvas = Image.new("RGBA", (CARD_W, CARD_H), (20, 24, 32, 255))
+    # Transparent canvas so template rounded corners stay see-through (not black).
+    canvas = Image.new("RGBA", (CARD_W, CARD_H), (0, 0, 0, 0))
     portrait_box = layout["IMAGE"]
     if avatar_path.exists():
         canvas.paste(fit_cover(Image.open(avatar_path), portrait_box), (portrait_box[0], portrait_box[1]))
@@ -708,7 +709,7 @@ def render_card(card: CardData, avatar_path: Path) -> Image.Image:
         draw_effect_text(draw, card, layout)
 
     draw_footer(canvas, draw, card, layout)
-    return canvas.convert("RGB")
+    return canvas  # keep RGBA so rounded corners stay transparent
 
 
 def draw_layout_debug(img: Image.Image, layout: dict[str, Any]) -> Image.Image:
@@ -740,7 +741,7 @@ def draw_layout_debug(img: Image.Image, layout: dict[str, Any]) -> Image.Image:
     for y in range(0, CARD_H + 1, step):
         draw.line((0, y, sx(18), y), fill=(255, 255, 255, 200), width=1)
         draw.text((sx(22), y), str(y), font=ruler, fill=(255, 255, 255, 200))
-    return Image.alpha_composite(out, overlay).convert("RGB")
+    return Image.alpha_composite(out, overlay)
 
 
 def save_pdf(
@@ -775,12 +776,13 @@ def save_card_pdf(img: Image.Image, pdf_path: Path) -> None:
 def compose_sticker_sheet(card_images: list[Image.Image], template_path: Path = STICKER_TEMPLATE) -> Image.Image:
     if not template_path.exists():
         raise FileNotFoundError(f"Missing sticker template: {template_path}")
-    sheet = Image.open(template_path).convert("RGB")
+    sheet = Image.open(template_path).convert("RGBA")
     for img, (x, y) in zip(card_images[:STICKER_PER_SHEET], STICKER_SLOTS):
-        sticker = img.convert("RGB").resize((STICKER_CARD_W_PX, STICKER_CARD_H_PX), Image.Resampling.LANCZOS)
+        sticker = img.convert("RGBA").resize((STICKER_CARD_W_PX, STICKER_CARD_H_PX), Image.Resampling.LANCZOS)
         ox = x + max(0, (709 - sticker.width) // 2)
         oy = y + max(0, (1005 - sticker.height) // 2)
-        sheet.paste(sticker, (ox, oy))
+        # Paste with alpha so card rounded corners stay transparent (no black fill).
+        sheet.paste(sticker, (ox, oy), sticker)
     return sheet
 
 
