@@ -111,14 +111,14 @@ _LAYOUT_DESIGNS: dict[str, dict[str, Any]] = {
         "NAME": (116, 66, 904, 136),
         "COST": (1196, 94, 1418, 228),
         "SUBTYPE": (518, 1315, 972, 1381),
-        "EFFECT": (268, 1467, 1186, 1685),
+        "EFFECT": (210, 1458, 1335, 1728),
         "VC": (92, 1839, 282, 1984),
         "PARTY_TYPE": (395, 1870, 1120, 1928),
         "PARTY": (1220, 1805, 1344, 1933),
         "PARTYABB": (1202, 1986, 1372, 2030),
         "FOOTER_CLEAR": (441, 1961, 776, 2036),
         "SET": (441, 1961, 554, 2005),
-        "YEAR": (441, 2014, 760, 2034),
+        "YEAR": (441, 2016, 760, 2036),
         "ID": (800, 1966, 1055, 1994),
         "CARDNUM": (800, 1992, 1055, 2028),
         "SKILLS_RIGHT": 1402,
@@ -126,8 +126,8 @@ _LAYOUT_DESIGNS: dict[str, dict[str, Any]] = {
         "SKILLS_GAP": 10,
         "SKILLS_HEIGHT": 58,
         "fonts": {
-            "NAME": 10, "COST": 24, "VC": 24, "SUBTYPE": 9,
-            "EFFECT": 8, "POWER_COST": 8, "PARTY_TYPE": 8, "PARTYABB": 5.76,
+            "NAME": 10, "COST": 24, "VC": 24, "SUBTYPE": 8.5,
+            "EFFECT": 7, "POWER_COST": 7, "PARTY_TYPE": 8, "PARTYABB": 5.76,
             "SET": 4.6, "YEAR": 2.3,
             "ID": 3.84, "CARDNUM": 4.8,
         },
@@ -450,6 +450,32 @@ def wrap_text(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont, m
     return lines
 
 
+def wrap_effect_lines(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    font: ImageFont.ImageFont,
+    first_width: int,
+    rest_width: int,
+) -> list[str]:
+    """Wrap so line 1 fits beside the power-cost circle; later lines use the full box width."""
+    words = text.split()
+    if not words:
+        return []
+    first: list[str] = [words[0]]
+    i = 1
+    while i < len(words):
+        trial = f"{' '.join(first)} {words[i]}"
+        if draw.textbbox((0, 0), trial, font=font)[2] > first_width:
+            break
+        first.append(words[i])
+        i += 1
+    lines = [" ".join(first)]
+    rest = " ".join(words[i:])
+    if rest:
+        lines.extend(wrap_text(draw, rest, font, rest_width))
+    return lines
+
+
 def draw_effect_text(draw: ImageDraw.ImageDraw, card: CardData, layout: dict[str, Any]) -> None:
     left, top, right, bottom = layout["EFFECT"]
     effect = card.effect.rstrip(". ").upper()
@@ -459,35 +485,64 @@ def draw_effect_text(draw: ImageDraw.ImageDraw, card: CardData, layout: dict[str
     power_cost = _num(card.power_cost)
     fonts = layout["fonts"]
     effect_px = fonts["EFFECT"]
-    if len(effect) >= 60:
-        effect_px = max(1, int(round(effect_px * 0.85)))
     font = load_font(effect_px)
     circle_font = load_font(fonts.get("POWER_COST", fonts["EFFECT"]))
 
-    prefix, x, y = "", left + sx(20), top + sx(30)
-    if card.type == "ALLY" and power_cost is not None:
-        radius = sx(28)
-        cx, cy = x + radius, y + radius + sx(4)
-        draw.ellipse((cx - radius, cy - radius, cx + radius, cy + radius), fill=(255, 255, 255, 255))
-        draw_text(draw, str(power_cost), (cx - radius, cy - radius, cx + radius, cy + radius), circle_font, fill=(30, 40, 60, 255))
-        prefix, x = " : ", cx + radius + sx(8)
+    pad = sx(16)
+    show_cost = card.type == "ALLY" and power_cost is not None
+    radius = sx(26) if show_cost else 0
+    gap = sx(8) if show_cost else 0
+    cost_w = (2 * radius + gap) if show_cost else 0
 
-    body = f"{prefix}{effect}" if prefix else effect
-    max_width = right - x - sx(10)
-    lines = wrap_text(draw, body, font, max_width)
-    line_h = font.size + sx(10)
-    limit = 6
-    if card.type != "ALLY":
-        avail = max(line_h, bottom - y)
-        floor = max(1, int(round(fonts["EFFECT"] * 0.68)))
-        while len(lines) * line_h > avail and effect_px > floor:
-            effect_px -= 1
-            font = load_font(effect_px)
-            lines = wrap_text(draw, body, font, max_width)
-            line_h = font.size + sx(10)
-        limit = max(1, avail // max(1, line_h))
-    for i, line in enumerate(lines[:limit]):
-        draw.text((x if i == 0 else left + sx(20), y + i * line_h), line, font=font, fill=(255, 255, 255, 255))
+    # Wrap against the full box; line 1 reserves room for the cost circle when present
+    body = f": {effect}" if show_cost else effect
+    rest_width = max(1, right - left - 2 * pad)
+    first_width = max(1, rest_width - cost_w)
+    lines = wrap_effect_lines(draw, body, font, first_width, rest_width)
+    line_h = font.size + sx(4)
+    avail = max(line_h, bottom - top - 2 * pad)
+    floor = max(1, int(round(fonts["EFFECT"] * (0.68 if card.type != "ALLY" else 0.85))))
+    while len(lines) * line_h > avail and effect_px > floor:
+        effect_px -= 1
+        font = load_font(effect_px)
+        lines = wrap_effect_lines(draw, body, font, first_width, rest_width)
+        line_h = font.size + sx(4)
+    limit = max(1, avail // max(1, line_h))
+    lines = lines[:limit]
+    if not lines:
+        return
+
+    # Center the whole block in the effect box (short effects sit mid-panel)
+    block_h = len(lines) * line_h
+    y = top + max(pad, (bottom - top - block_h) // 2)
+
+    line_widths = [draw.textbbox((0, 0), line, font=font)[2] for line in lines]
+    content_widths = [
+        (cost_w + line_widths[0]) if show_cost else line_widths[0],
+        *line_widths[1:],
+    ]
+    block_w = max(content_widths)
+    block_left = left + (right - left - block_w) // 2
+
+    for i, line in enumerate(lines):
+        ly = y + i * line_h
+        if i == 0 and show_cost:
+            cx = block_left + radius
+            cy = ly + line_h // 2
+            draw.ellipse(
+                (cx - radius, cy - radius, cx + radius, cy + radius),
+                fill=(255, 255, 255, 255),
+            )
+            draw_text(
+                draw, str(power_cost),
+                (cx - radius, cy - radius, cx + radius, cy + radius),
+                circle_font, fill=(30, 40, 60, 255),
+            )
+            tx = block_left + cost_w
+        else:
+            # Center each continuation line within the centered block
+            tx = block_left + (block_w - line_widths[i]) // 2
+        draw.text((tx, ly), line, font=font, fill=(255, 255, 255, 255))
 
 
 def draw_subtype_pill(draw: ImageDraw.ImageDraw, subtype: str, layout: dict[str, Any]) -> None:
@@ -546,21 +601,22 @@ def draw_footer(
 
     star_h = sx(28)
     rarity = _num(card.rarity)
-    _paste_rarity_stars(
-        card_img,
-        (badge[2] + sx(12), badge[1] + (badge[3] - badge[1] - star_h) // 2),
-        rarity if rarity is not None and rarity > 0 else 5,
-        star_h,
-        sx(32),
-    )
+    if rarity is not None and rarity > 0:
+        _paste_rarity_stars(
+            card_img,
+            (badge[2] + sx(12), badge[1] + (badge[3] - badge[1] - star_h) // 2),
+            int(rarity),
+            star_h,
+            sx(32),
+        )
 
     year = card.year if card.year else 2026
     draw_text(
         draw, f"©{year} TINKER GAMES & HOBBY.", layout["YEAR"],
         layout_font(layout, "YEAR", bold=False), align="left",
     )
-    draw_text(draw, card.serial, layout["ID"], layout_font(layout, "ID", bold=False))
-    draw_text(draw, card.print_run, layout["CARDNUM"], layout_font(layout, "CARDNUM", bold=True))
+    draw_text(draw, card.serial, layout["ID"], layout_font(layout, "ID", bold=False), align="right")
+    draw_text(draw, card.print_run, layout["CARDNUM"], layout_font(layout, "CARDNUM", bold=True), align="right")
 
 
 def avatar_for(card: CardData, source: Path = AVATAR_DIR) -> Path:
