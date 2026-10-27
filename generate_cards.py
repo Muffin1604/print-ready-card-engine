@@ -79,16 +79,16 @@ TYPE_SUFFIX = {"ALLY": "ally", "CANDIDATE": "can", "EFFECT": "eff"}
 # Shared footer / party chrome for candidate + effect templates
 # Keys match ELECTOR.xlsx column headings where applicable.
 _FOOTER = {
-    "PARTY": (1216, 1778, 1381, 1945),          # party emblem circle
+    "PARTY": (1220, 1778, 1384, 1945),          # party emblem circle
     "PARTYABB": (1160, 1994, 1440, 2040),
     "FOOTER_CLEAR": (442, 1970, 770, 2060),      # layout-only wipe behind SET/ID
     "SET": (442, 1970, 560, 2018),
     "YEAR": (442, 2022, 760, 2052),              # copyright line uses YEAR
-    "ID": (800, 1968, 1120, 2004),
-    "CARDNUM": (800, 2000, 1120, 2044),          # print run CARDNUM/SETTOTAL
+    "ID": (745, 1968, 1065, 2004),               # nudged left clear of bottom-right diagonal
+    "CARDNUM": (745, 2000, 1065, 2044),          # print run CARDNUM/SETTOTAL
 }
 _FOOTER_FONTS = {
-    "SET": 5.5,
+    "SET": 5,
     "YEAR": 2.3,
     "ID": 3.78,
     "CARDNUM": 4.73,
@@ -123,8 +123,8 @@ _LAYOUT_DESIGNS: dict[str, dict[str, Any]] = {
         "CARDNUM": (800, 1992, 1055, 2028),
         # Bottom diagonal chrome (between VOTES / party circle). Boxes sized so both
         # badges share height; SKILLS2 extends to the right diagonal (~before PARTY).
-        "SKILLS1": (372, 1745, 710, 1810),
-        "SKILLS2": (780, 1745, 1115, 1810),
+        "SKILLS1": (402, 1760, 742, 1825),
+        "SKILLS2": (765, 1760, 1100, 1825),
         "fonts": {
             "NAME": 10, "COST": 24, "VC": 24, "SUBTYPE": 8.5,
             "EFFECT": 7, "POWER_COST": 7, "PARTY_TYPE": 8, "PARTYABB": 5.76,
@@ -608,14 +608,15 @@ def draw_footer(
 
     star_h = sx(28)
     rarity = _num(card.rarity)
-    if rarity is not None and rarity > 0:
-        _paste_rarity_stars(
-            card_img,
-            (badge[2] + sx(12), badge[1] + (badge[3] - badge[1] - star_h) // 2),
-            int(rarity),
-            star_h,
-            sx(32),
-        )
+    if rarity is None or rarity <= 0:
+        rarity = 1
+    _paste_rarity_stars(
+        card_img,
+        (badge[2] + sx(12), badge[1] + (badge[3] - badge[1] - star_h) // 2),
+        int(rarity),
+        star_h,
+        sx(32),
+    )
 
     year = card.year if card.year else 2026
     draw_text(
