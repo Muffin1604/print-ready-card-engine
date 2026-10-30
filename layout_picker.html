@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ELECTOR Layout Picker</title>
+  <style>
+    :root {
+      --bg: #12151c;
+      --panel: #1c2230;
+      --text: #e8eef8;
+      --muted: #9aa8bd;
+      --accent: #5ad1ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 320px 1fr;
+    }
+    aside {
+      background: var(--panel);
+      padding: 20px;
+      border-right: 1px solid #2b3446;
+      overflow: auto;
+    }
+    h1 { font-size: 18px; margin: 0 0 8px; }
+    p, li { color: var(--muted); font-size: 13px; line-height: 1.45; }
+    code {
+      background: #0d1118;
+      padding: 1px 6px;
+      border-radius: 4px;
+      color: var(--accent);
+      font-size: 12px;
+    }
+    .readout {
+      margin: 16px 0;
+      padding: 12px;
+      background: #0d1118;
+      border-radius: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 13px;
+      white-space: pre-wrap;
+    }
+    label { display: block; margin: 12px 0 6px; font-size: 12px; color: var(--muted); }
+    input[type="file"] { width: 100%; color: var(--text); }
+    button {
+      margin-top: 10px;
+      width: 100%;
+      border: 0;
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: var(--accent);
+      color: #041018;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    main {
+      display: grid;
+      place-items: start center;
+      padding: 24px;
+      overflow: auto;
+    }
+    .stage-wrap {
+      position: relative;
+      max-width: min(90vw, 750px);
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+      background: #000;
+      cursor: crosshair;
+      border: 1px solid #334;
+      border-radius: 8px;
+    }
+    .hint { margin-top: 10px; font-size: 12px; color: var(--muted); text-align: center; }
+  </style>
+</head>
+<body>
+  <aside>
+    <h1>Layout coordinate picker</h1>
+    <p>
+      Card canvas is fixed at <code>1500 × 2100</code> pixels.<br />
+      Origin <code>(0, 0)</code> is the <strong>top-left</strong> corner.
+    </p>
+    <p>
+      Each LAYOUT box is:<br />
+      <code>(left, top, right, bottom)</code>
+    </p>
+    <ul>
+      <li><code>left</code> = X of left edge</li>
+      <li><code>top</code> = Y of top edge</li>
+      <li><code>right</code> = X of right edge</li>
+      <li><code>bottom</code> = Y of bottom edge</li>
+    </ul>
+    <p>
+      Move a box <strong>right</strong> → increase <code>left</code> and <code>right</code>.<br />
+      Move a box <strong>down</strong> → increase <code>top</code> and <code>bottom</code>.<br />
+      Make wider → increase <code>right</code> (or decrease <code>left</code>).
+    </p>
+
+    <label for="file">Load a generated card PNG</label>
+    <input id="file" type="file" accept="image/png,image/jpeg" />
+    <p id="loaded">No image loaded</p>
+
+    <div class="readout" id="readout">Hover the image…</div>
+    <div class="readout" id="selection">No box selected yet</div>
+    <button id="copy" type="button">Copy selected box</button>
+    <p style="margin-top:14px">
+      Workflow: generate with <code>--debug-layout</code>, open that PNG here,
+      click the corners where text/icons should sit, paste values into
+      <code>LAYOUT</code> in <code>generate_cards.py</code>, regenerate.
+    </p>
+  </aside>
+  <main>
+    <div class="stage-wrap">
+      <canvas id="c" width="1500" height="2100"></canvas>
+      <div class="hint">Click once for corner A, again for corner B → builds a box</div>
+    </div>
+  </main>
+  <script>
+    const canvas = document.getElementById("c");
+    const ctx = canvas.getContext("2d");
+    const readout = document.getElementById("readout");
+    const selection = document.getElementById("selection");
+    const CARD_W = 1500;
+    const CARD_H = 2100;
+    const loaded = document.getElementById("loaded");
+    let source = null;
+    let loadToken = 0;
+    let cornerA = null;
+    let lastBox = null;
+    let copyStatus = "";
+
+    function draw() {
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, CARD_W, CARD_H);
+      if (source) ctx.drawImage(source, 0, 0, CARD_W, CARD_H);
+
+      // light grid every 100px
+      ctx.strokeStyle = "rgba(255,255,255,0.12)";
+      ctx.lineWidth = 1;
+      for (let x = 0; x <= CARD_W; x += 100) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, CARD_H); ctx.stroke();
+      }
+      for (let y = 0; y <= CARD_H; y += 100) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(CARD_W, y); ctx.stroke();
+      }
+
+      if (cornerA) {
+        ctx.fillStyle = "#5ad1ff";
+        ctx.beginPath();
+        ctx.arc(cornerA.x, cornerA.y, 8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      if (lastBox) {
+        const [l, t, r, b] = lastBox;
+        ctx.strokeStyle = "#ffd166";
+        ctx.lineWidth = 4;
+        ctx.strokeRect(l, t, r - l, b - t);
+      }
+    }
+
+    function renderSelection() {
+      if (!lastBox && !cornerA) {
+        selection.textContent = copyStatus || "No box selected yet";
+        return;
+      }
+      const lines = [];
+      if (lastBox) {
+        const [l, t, r, b] = lastBox;
+        lines.push(`Selected box:\n(${l}, ${t}, ${r}, ${b})`);
+        lines.push(`"votes_value": (${l}, ${t}, ${r}, ${b}),`);
+      }
+      if (cornerA) {
+        lines.push(`Corner A: (${cornerA.x}, ${cornerA.y})\nClick the opposite corner.`);
+      }
+      if (copyStatus) lines.push(copyStatus);
+      selection.textContent = lines.join("\n\n");
+    }
+
+    async function copyText(text) {
+      if (navigator.clipboard && window.isSecureContext) {
+        try {
+          await navigator.clipboard.writeText(text);
+          return;
+        } catch (err) {
+          // file:// and some permission prompts reject writeText; fall back below.
+        }
+      }
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      let ok = false;
+      try {
+        ok = document.execCommand("copy");
+      } finally {
+        ta.remove();
+      }
+      if (!ok) throw new Error("copy failed");
+    }
+
+    function canvasPos(evt) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = CARD_W / rect.width;
+      const scaleY = CARD_H / rect.height;
+      return {
+        x: Math.round((evt.clientX - rect.left) * scaleX),
+        y: Math.round((evt.clientY - rect.top) * scaleY),
+      };
+    }
+
+    function replaceSource(next) {
+      if (source && typeof source.close === "function") source.close();
+      source = next;
+    }
+
+    async function decodeImage(blob) {
+      if (typeof createImageBitmap === "function") {
+        try {
+          return await createImageBitmap(blob);
+        } catch (err) {
+          // Some browsers reject a file-input blob after the picker closes.
+        }
+      }
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(reader.error || new Error("read failed"));
+        reader.onload = () => resolve(reader.result);
+        reader.readAsDataURL(blob);
+      });
+      const image = await new Promise((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = () => reject(new Error("decode failed"));
+        el.src = dataUrl;
+      });
+      const off = document.createElement("canvas");
+      off.width = CARD_W;
+      off.height = CARD_H;
+      off.getContext("2d").drawImage(image, 0, 0, CARD_W, CARD_H);
+      return off;
+    }
+
+    document.getElementById("file").addEventListener("change", (e) => {
+      const file = e.target.files?.[0];
+      // Ignore a follow-up change with no file. Copy the bytes now so the
+      // card stays if the picker clears the chosen filename.
+      if (!file) return;
+      const name = file.name;
+      const blob = file.slice(0, file.size, file.type || "image/png");
+      const token = ++loadToken;
+      decodeImage(blob).then((decoded) => {
+        if (token !== loadToken) {
+          if (decoded && typeof decoded.close === "function") decoded.close();
+          return;
+        }
+        replaceSource(decoded);
+        cornerA = null;
+        lastBox = null;
+        copyStatus = "";
+        loaded.textContent = "Showing " + name;
+        readout.textContent = "Hover the image…";
+        renderSelection();
+        draw();
+      }).catch(() => {
+        if (token !== loadToken) return;
+        readout.textContent = "Failed to load image.";
+      });
+    });
+
+    canvas.addEventListener("contextlost", (evt) => {
+      evt.preventDefault();
+    });
+    canvas.addEventListener("contextrestored", () => {
+      draw();
+    });
+
+    canvas.addEventListener("mousemove", (evt) => {
+      const { x, y } = canvasPos(evt);
+      let line = `Cursor: x=${x}, y=${y}`;
+      if (cornerA) {
+        const l = Math.min(cornerA.x, x);
+        const t = Math.min(cornerA.y, y);
+        const r = Math.max(cornerA.x, x);
+        const b = Math.max(cornerA.y, y);
+        line += `\nDraft: (${l}, ${t}, ${r}, ${b})`;
+      }
+      readout.textContent = line;
+    });
+
+    canvas.addEventListener("click", (evt) => {
+      const p = canvasPos(evt);
+      if (!cornerA) {
+        cornerA = p;
+      } else {
+        const l = Math.min(cornerA.x, p.x);
+        const t = Math.min(cornerA.y, p.y);
+        const r = Math.max(cornerA.x, p.x);
+        const b = Math.max(cornerA.y, p.y);
+        lastBox = [l, t, r, b];
+        cornerA = null;
+        copyStatus = "";
+      }
+      readout.textContent = `Cursor: x=${p.x}, y=${p.y}`;
+      renderSelection();
+      draw();
+    });
+
+    document.getElementById("copy").addEventListener("click", async (evt) => {
+      evt.preventDefault();
+      if (!lastBox) {
+        copyStatus = "Click two corners on the card first.";
+        renderSelection();
+        return;
+      }
+      const text = `(${lastBox.join(", ")})`;
+      try {
+        await copyText(text);
+        copyStatus = `Copied: ${text}`;
+      } catch (err) {
+        copyStatus = `Clipboard blocked. Box is still selected:\n${text}`;
+      }
+      // Keep the chosen box. A clipboard prompt can blank the canvas,
+      // and cursor moves must not wipe this text.
+      renderSelection();
+      draw();
+    });
+
+    draw();
+  </script>
+</body>
+</html>
