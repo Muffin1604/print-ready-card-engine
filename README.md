@@ -1,245 +1,167 @@
-# ELECTOR Card Generator
+# Print-Ready Card Engine
 
-Generate printable **PNG** and **PDF** cards (and optional sticker sheets) from `ELECTOR.xlsx` using party/type templates, skill icons, and portrait avatars.
+Python pipeline that turns an Excel spreadsheet into **print-ready poker cards** (PNG + PDF) and optional **3×3 sticker sheets** — party templates, skill badges, portraits, and layout composition included.
 
-Main script: `generate_cards.py`
-
----
-
-## Directory structure
-
-```
-.
-├── generate_cards.py          # Main generation script
-├── ELECTOR.xlsx               # Card data (source of truth)
-├── requirements.txt           # Python dependencies
-├── Sticker-temp.png           # Letter-size sticker sheet template (3×3)
-├── Result-sample.png          # Reference sample (optional)
-├── ally-Template-1.png        # Design reference templates (optional)
-├── can-Template-2.png
-├── eff-Template-3.png
-│
-├── fonts/                     # Arial fonts used for card text (include when sharing)
-│   ├── Arial.ttf
-│   └── Arial Bold.ttf
-│
-├── ELECTOR/
-│   ├── cardtemps/             # Party × type card backgrounds
-│   │   ├── demally.png / demcan.png / demeff.png
-│   │   ├── repally.png / repcan.png / repeff.png
-│   │   ├── greenally.png / greencan.png / greeneff.png
-│   │   ├── libally.png / libcan.png / libeff.png
-│   │   ├── indally.png / indcan.png / indeff.png
-│   │   ├── unially.png / unican.png / unieff.png
-│   │   └── cardback1.png / cardback2.png
-│   ├── iconslabels/           # Party emblems + skill badges
-│   │   ├── DEMOCRAT.png, REPUBLICAN.png, GREEN.png, …
-│   │   ├── SYNERGIZE.png, IMMUNITY.png, SHIELDED.png, …
-│   │   └── rarity.png
-│   └── avatar/                # Per-card portraits
-│       ├── default-img.png    # Fallback when no numbered avatar exists
-│       └── 001.png            # Optional: CARDNUM-matched (e.g. 001.png)
-│
-└── output/                    # Generated files (created/updated by the script)
-    ├── png/                   # Individual cards as PNG
-    ├── pdfs/                  # Individual cards as PDF (letter page, card centered)
-    └── stickers/              # Sticker sheets (PNG + PDF, 9 cards each)
-```
+Built for the **ELECTOR** tabletop card set: allies, candidates, and effect cards across multiple parties.
 
 ---
 
-## Prerequisites
+## Sample output
 
-- Python 3.10+ recommended
-- Card text uses **Arial** from `fonts/` (bundled with the project). Keep that folder when giving the project to a client so it runs the same on any machine.
+### Generated card (PNG · 2.5″ × 3.5″ @ 400 DPI)
 
-### Setup
+<p align="center">
+  <img src="docs/samples/001_BILLY_SNOW.png" alt="Billy Snow — Democrat Ally card" width="320" />
+</p>
+
+### Sticker sheet (US Letter · 9 slots)
+
+<p align="center">
+  <img src="docs/samples/sticker_sheet_001.png" alt="Sticker sheet with generated cards" width="560" />
+</p>
+
+### Design templates (Ally · Candidate · Effect)
+
+<p align="center">
+  <img src="docs/samples/ally-template.png" alt="Ally card template" width="200" />
+  &nbsp;
+  <img src="docs/samples/candidate-template.png" alt="Candidate card template" width="200" />
+  &nbsp;
+  <img src="docs/samples/effect-template.png" alt="Effect card template" width="200" />
+</p>
+
+---
+
+## Features
+
+- **Excel → cards** — reads `ELECTOR.xlsx` and composes each row onto the matching party × type background
+- **Print specs** — poker cards at **1000 × 1400 px** (2.5″ × 3.5″ @ 400 DPI); sticker sheets on US Letter @ 300 DPI
+- **Dual export** — individual **PNG** + letter-page **PDF** per card
+- **Sticker packing** — automatic 3×3 sheets (PNG + PDF), 9 cards per page
+- **Assets driven** — templates, party emblems, skill icons, and per-card avatars from folders
+- **CLI filters** — generate all cards, one prototype, specific IDs, or a limit for fast iteration
+- **Debug overlays** — optional layout boxes when tuning positions
+
+---
+
+## Quick start
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+
+python generate_cards.py                 # full run
+python generate_cards.py --prototype     # Billy Snow only
+python generate_cards.py --limit 10      # first 10 cards
 ```
 
-Dependencies (`requirements.txt`):
+**Requires:** Python 3.10+, Arial fonts in `fonts/` (bundled), and the `ELECTOR/` asset tree.
 
-- `openpyxl` — read Excel
-- `Pillow` — compose card images
-- `reportlab` — write PDFs
+| Package     | Role              |
+|-------------|-------------------|
+| `openpyxl`  | Read Excel        |
+| `Pillow`    | Compose card art  |
+| `reportlab` | Write PDFs        |
 
 ---
 
 ## How it works
 
-1. Reads every data row from `ELECTOR.xlsx` (active sheet, header row skipped).
-2. Picks a template from `ELECTOR/cardtemps/` based on **PARTY** + **TYPE**.
-3. Places a portrait from `ELECTOR/avatar/` (or a path you pass with `--avatar`).
-4. Draws stats, name, subtype, effect text, party emblem, skills, and footer.
-5. Writes each card to `output/png/` and `output/pdfs/`.
-6. Unless `--no-stickers` is set, packs cards into 3×3 sticker sheets under `output/stickers/`.
-
-### Card size
-
-| Output | Spec |
-|--------|------|
-| Individual card | Poker **2.5″ × 3.5″** @ **400 DPI** → **1000 × 1400** px |
-| Sticker sheet | US Letter @ **300 DPI**, **9 cards** (60×85 mm slots) |
+1. Load every data row from `ELECTOR.xlsx` (header skipped).
+2. Pick a background from `ELECTOR/cardtemps/` using **PARTY** + **TYPE**.
+3. Place a portrait from `ELECTOR/avatar/` (or `--avatar`).
+4. Draw stats, name, subtype, effect text, emblem, skills, and footer.
+5. Write `output/png/` and `output/pdfs/`.
+6. Pack sticker sheets into `output/stickers/` (unless `--no-stickers`).
 
 ### Template mapping
 
-| Excel `PARTY` | Prefix | + `TYPE` | Suffix | Example file |
-|---------------|--------|----------|--------|--------------|
-| DEMOCRAT | `dem` | ALLY | `ally` | `demally.png` |
-| REPUBLICAN | `rep` | CANDIDATE | `can` | `repcan.png` |
-| GREEN | `green` | EFFECT | `eff` | `greeneff.png` |
-| LIBERTARIAN | `lib` | … | … | `libally.png` |
-| INDEPENDENT | `ind` | … | … | `indcan.png` |
-| UNIVERSAL | `uni` | … | … | `unieff.png` |
+| Party        | Prefix | Type      | Suffix | Example        |
+|--------------|--------|-----------|--------|----------------|
+| DEMOCRAT     | `dem`  | ALLY      | `ally` | `demally.png`  |
+| REPUBLICAN   | `rep`  | CANDIDATE | `can`  | `repcan.png`   |
+| GREEN        | `green`| EFFECT    | `eff`  | `greeneff.png` |
+| LIBERTARIAN  | `lib`  | …         | …      | `libally.png`  |
+| INDEPENDENT  | `ind`  | …         | …      | `indcan.png`   |
+| UNIVERSAL    | `uni`  | …         | …      | `unieff.png`   |
 
-File pattern: `{prefix}{suffix}.png` inside `ELECTOR/cardtemps/`.
-
-### Excel columns → card
-
-Columns are matched by **header name** (order-tolerant). New workbook uses `SKILLS1`/`SKILLS2`; older `SKILLS` still works.
-
-| Column | Used for |
-|--------|----------|
-| ID | Footer serial `# EL-{id}` |
-| NAME | Card title |
-| PARTY | Template, emblem, alliance label |
-| TYPE | Layout (`ALLY` / `CANDIDATE` / `EFFECT`) |
-| SUBTYPE | Subtype pill (ally / effect) |
-| MP | Candidate left stat |
-| REGEN | Candidate right stat |
-| COST | Ally / effect power (or cost) |
-| VC | Ally votes |
-| POWER COST | Circled ability cost in effect text |
-| EFFECT | Ability text |
-| SKILLS1 / SKILLS (legacy) | First skill badge(s) → `iconslabels/{SKILL}.png` |
-| SKILLS2 | Second skill badge (optional) |
-| SET | Set badge (default `BASE`) |
-| CARDNUM | Print run `001/N` and avatar `{CARDNUM}.png` |
-| RARITY | Rarity stars in footer |
-| YEAR | Copyright year (default 2026) |
-| SETTOTAL | Print-run denominator (fallback: row count) |
-| PARTYABB | Party abbreviation under emblem (fallback: built-in map) |
-| IMAGE | Optional avatar filename stem (after CARDNUM) |
-
-### Avatars
-
-`--avatar` can be either:
-
-- A **folder** (default: `ELECTOR/avatar/`) — looks for `{CARDNUM}.png` (zero-padded to 3 digits), else `default-img.png`
-- A **single image file** — used for every selected card
+Pattern: `{prefix}{suffix}.png` in `ELECTOR/cardtemps/`.
 
 ---
 
-## Usage
-
-Activate the venv first:
+## CLI
 
 ```bash
-source .venv/bin/activate
-```
-
-### Generate everything
-
-```bash
-python generate_cards.py
-```
-
-### Prototype (Billy Snow only)
-
-```bash
-python generate_cards.py --prototype
-```
-
-### Specific card IDs
-
-```bash
-python generate_cards.py --ids 0000001 0000151
-```
-
-### First N cards
-
-```bash
-python generate_cards.py --limit 10
-```
-
-### Custom Excel / output / avatars
-
-```bash
-python generate_cards.py --xlsx ELECTOR.xlsx --out output --avatar ELECTOR/avatar
-```
-
-Use one shared portrait for all cards:
-
-```bash
-python generate_cards.py --avatar path/to/portrait.png --limit 5
-```
-
-### Cards only (skip sticker sheets)
-
-```bash
-python generate_cards.py --no-stickers
-```
-
-### Debug layout overlays
-
-Draws labeled boxes for each layout region on the PNG (useful when tweaking positions):
-
-```bash
-python generate_cards.py --prototype --debug-layout --no-stickers
-```
-
-### CLI reference
-
-```
 python generate_cards.py [-h]
   --xlsx PATH          Excel workbook (default: ELECTOR.xlsx)
-  --avatar PATH        Avatar folder or single image (default: ELECTOR/avatar)
+  --avatar PATH        Avatar folder or single image
   --out PATH           Output root (default: output)
   --ids [IDS ...]      Only these card IDs
   --limit N            Only first N matching cards
   --prototype          Billy Snow only
   --debug-layout       Overlay layout boxes on PNGs
-  --no-stickers        Skip sticker sheet PNG/PDF generation
+  --no-stickers        Skip sticker sheet generation
+```
+
+**Examples**
+
+```bash
+python generate_cards.py --ids 0000001 0000151
+python generate_cards.py --avatar path/to/portrait.png --limit 5
+python generate_cards.py --prototype --debug-layout --no-stickers
 ```
 
 ---
 
-## Outputs
-
-After a successful run:
+## Project layout
 
 ```
-output/
-├── png/
-│   └── 001_BILLY_SNOW.png          # {CARDNUM}_{NAME}.png
-├── pdfs/
-│   └── 001_BILLY_SNOW.pdf          # Same stem; card centered on letter page
-└── stickers/
-    ├── sticker_sheet_001.png
-    ├── sticker_sheet_001.pdf
-    ├── sticker_sheet_002.png
-    └── …
+.
+├── generate_cards.py          # Main script
+├── ELECTOR.xlsx               # Card data (source of truth)
+├── requirements.txt
+├── Sticker-temp.png           # Letter sticker sheet template
+├── fonts/                     # Arial / Arial Bold
+├── docs/samples/              # README preview images
+├── ELECTOR/
+│   ├── cardtemps/             # Party × type backgrounds
+│   ├── iconslabels/           # Emblems + skill badges
+│   └── avatar/                # Portraits ({CARDNUM}.png)
+└── output/                    # Generated PNG / PDF / stickers
+    ├── png/
+    ├── pdfs/
+    └── stickers/
 ```
-
-Sticker sheets are filled in generation order, **9 cards per sheet**.
 
 ---
 
-## Adding or updating cards
+## Excel → card fields
 
-1. Edit rows in `ELECTOR.xlsx` (keep the header row and column order).
-2. Add matching templates under `ELECTOR/cardtemps/` if you introduce a new party/type combo.
-3. Add skill PNGs under `ELECTOR/iconslabels/` named like the skill token (e.g. `SYNERGIZE.png`).
-4. Optionally add `ELECTOR/avatar/{CARDNUM}.png` for that card’s portrait.
-5. Re-run `python generate_cards.py` (or `--ids` / `--limit` for a subset).
+Columns are matched by **header name**. Common fields:
+
+| Column | Use |
+|--------|-----|
+| `ID` / `NAME` / `PARTY` / `TYPE` | Identity + template |
+| `SUBTYPE` / `EFFECT` / `COST` / `VC` / `MP` / `REGEN` | Stats & text |
+| `SKILLS1` / `SKILLS2` | Skill badge icons |
+| `CARDNUM` / `SETTOTAL` / `RARITY` / `SET` / `YEAR` | Footer & print run |
+| `IMAGE` | Optional avatar stem |
+
+---
+
+## Adding cards
+
+1. Edit rows in `ELECTOR.xlsx`.
+2. Add templates under `ELECTOR/cardtemps/` for new party/type combos.
+3. Drop skill PNGs into `ELECTOR/iconslabels/` (e.g. `SYNERGIZE.png`).
+4. Optionally add `ELECTOR/avatar/{CARDNUM}.png`.
+5. Re-run `python generate_cards.py` (or `--ids` / `--limit`).
 
 ---
 
 ## Notes
 
-- Templates and icons must exist for every party/type/skill you reference, or that card will fail / skip the missing asset.
-- Generated files under `output/` are overwritten when you regenerate the same card or sheet names.
+- Missing templates or icons cause that card to fail or skip the asset.
+- Regenerating overwrites files with the same name under `output/`.
+- For a longer client handoff guide, see [`README-client.md`](README-client.md).

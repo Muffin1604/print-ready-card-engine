@@ -7,4 +7,6 @@ output/_pdf_tmp*
 output/
 Do-Not-touch/
 *.png
+!docs/samples/
+!docs/samples/**
 *.xlsx
